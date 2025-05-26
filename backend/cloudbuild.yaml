@@ -1,0 +1,11 @@
+
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ 'build', '-t', '$PROJECT_ID/pinecone-rag-backend', '.' ]
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ 'push', '$PROJECT_ID/pinecone-rag-backend' ]
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args: [ 'run', 'deploy', 'pinecone-rag-backend', '--image', 'gcr.io/$PROJECT_ID/pinecone-rag-backend', '--platform', 'managed', '--region', 'us-central1', '--allow-unauthenticated' ]
+images:
+- 'gcr.io/$PROJECT_ID/pinecone-rag-backend'

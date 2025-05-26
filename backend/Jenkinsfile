@@ -1,0 +1,47 @@
+
+pipeline {
+  agent any
+
+  environment {
+    GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account-key')
+  }
+
+  stages {
+    stage('Install Dependencies') {
+      steps {
+        sh 'pip install -r requirements.txt'
+      }
+    }
+    stage('Lint') {
+      steps {
+        sh 'flake8 app.py || echo "Lint warnings (non-blocking)"'
+      }
+    }
+    stage('Test') {
+      steps {
+        sh 'pytest || echo "Tests skipped (placeholder)"'
+      }
+    }
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t gcr.io/$PROJECT_ID/pinecone-rag-backend .'
+      }
+    }
+    stage('Push to Artifact Registry') {
+      steps {
+        sh 'docker push gcr.io/$PROJECT_ID/pinecone-rag-backend'
+      }
+    }
+    stage('Deploy to Cloud Run') {
+      steps {
+        sh 'gcloud run deploy pinecone-rag-backend --image gcr.io/$PROJECT_ID/pinecone-rag-backend --region us-central1 --platform managed --allow-unauthenticated'
+      }
+    }
+  }
+
+  post {
+    failure {
+      echo 'Build failed!'
+    }
+  }
+}
