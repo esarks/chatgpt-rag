@@ -1,17 +1,14 @@
-# Dockerfile for deploying Flask + Pinecone RAG backend on Cloud Run
 FROM python:3.10-slim
 
-# Create app directory
 WORKDIR /app
 
-# Copy project files from /workspace into the container
-COPY /workspace /app
+# Copy the contents of the backend directory into the container
+COPY backend /app
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port Cloud Run expects
+# Cloud Run expects the app to listen on this port
 ENV PORT=8080
 
-# Run the application
 CMD ["python", "app.py"]
