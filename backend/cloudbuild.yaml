@@ -1,25 +1,17 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/chatgpt-rag', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/chatgpt-rag', './backend']
 
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/chatgpt-rag']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
+    entrypoint: gcloud
     args:
-      - -c
-      - |
-        gcloud run deploy chatgpt-rag-api \
-          --image gcr.io/$PROJECT_ID/chatgpt-rag \
-          --region us-central1 \
-          --platform managed \
-          --allow-unauthenticated \
-          --update-secrets \
-            OPENAI_API_KEY=openai-api-key:latest \
-            PINECONE_API_KEY=pinecone-api-key:latest \
-            PINECONE_ENVIRONMENT=pinecone-environment:latest \
-            PINECONE_INDEX=pinecone-index:latest
-
-images:
-  - 'gcr.io/$PROJECT_ID/chatgpt-rag'
+      [
+        'run', 'deploy', 'chatgpt-rag',
+        '--image', 'gcr.io/$PROJECT_ID/chatgpt-rag',
+        '--region', 'us-central1',
+        '--platform', 'managed',
+        '--allow-unauthenticated'
+      ]
