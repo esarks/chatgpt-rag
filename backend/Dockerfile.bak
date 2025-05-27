@@ -1,23 +1,17 @@
-
-# Use the official Python image.
+# Dockerfile for deploying your Flask + Pinecone RAG backend on Cloud Run
 FROM python:3.10-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Set working directory
+# Create app directory
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
-# Copy app
+# Copy project files
 COPY . .
 
-# Expose port
-EXPOSE 8080
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port Cloud Run expects
+ENV PORT=8080
 
 # Run the application
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
+CMD ["python", "app.py"]
