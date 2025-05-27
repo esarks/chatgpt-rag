@@ -220,5 +220,7 @@ def stream_answer():
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8080))
+    print("✅ Flask app starting on port", port)
+    print("🔐 OPENAI key present:", bool(os.getenv("OPENAI_API_KEY")))
+    print("🔐 PINECONE key present:", bool(os.getenv("PINECONE_API_KEY")))
     app.run(host="0.0.0.0", port=port)
-
