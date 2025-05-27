@@ -6,16 +6,21 @@ steps:
     args: ['push', 'gcr.io/$PROJECT_ID/chatgpt-rag']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
+    entrypoint: bash
     args:
       - -c
       - |
+        echo "Deploying to Cloud Run with injected secrets..."
         gcloud run deploy chatgpt-rag-api \
           --image gcr.io/$PROJECT_ID/chatgpt-rag \
           --region us-central1 \
           --platform managed \
           --allow-unauthenticated \
-          --set-env-vars OPENAI_API_KEY=$OPENAI_API_KEY,PINECONE_API_KEY=$PINECONE_API_KEY,PINECONE_ENVIRONMENT=$PINECONE_ENVIRONMENT,PINECONE_INDEX=$PINECONE_INDEX
+          --set-env-vars \
+          OPENAI_API_KEY=$OPENAI_API_KEY,\
+          PINECONE_API_KEY=$PINECONE_API_KEY,\
+          PINECONE_ENVIRONMENT=$PINECONE_ENVIRONMENT,\
+          PINECONE_INDEX=$PINECONE_INDEX
 
 availableSecrets:
   secretManager:
