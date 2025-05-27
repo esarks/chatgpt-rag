@@ -15,10 +15,10 @@ steps:
           --region us-central1 \
           --platform managed \
           --allow-unauthenticated \
-          --set-secrets \
-            OPENAI_API_KEY=openai-api-key:latest,\
-            PINECONE_API_KEY=pinecone-api-key:latest,\
-            PINECONE_ENVIRONMENT=pinecone-environment:latest,\
+          --update-secrets \
+            OPENAI_API_KEY=openai-api-key:latest \
+            PINECONE_API_KEY=pinecone-api-key:latest \
+            PINECONE_ENVIRONMENT=pinecone-environment:latest \
             PINECONE_INDEX=pinecone-index:latest
 
 images:
