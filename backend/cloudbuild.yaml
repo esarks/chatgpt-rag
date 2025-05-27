@@ -6,20 +6,28 @@ steps:
     args: ['push', 'gcr.io/$PROJECT_ID/chatgpt-rag']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'gcloud'
+    entrypoint: 'bash'
     args:
-      [
-        'run', 'deploy', 'chatgpt-rag-api',
-        '--image', 'gcr.io/$PROJECT_ID/chatgpt-rag',
-        '--region', 'us-central1',
-        '--platform', 'managed',
-        '--allow-unauthenticated',
-        '--set-secrets',
-        'OPENAI_API_KEY=openai-api-key:latest',
-        'PINECONE_API_KEY=pinecone-api-key:latest',
-        'PINECONE_ENVIRONMENT=pinecone-environment:latest',
-        'PINECONE_INDEX=pinecone-index:latest'
-      ]
+      - -c
+      - |
+        gcloud run deploy chatgpt-rag-api \
+          --image gcr.io/$PROJECT_ID/chatgpt-rag \
+          --region us-central1 \
+          --platform managed \
+          --allow-unauthenticated \
+          --set-env-vars OPENAI_API_KEY=$OPENAI_API_KEY,PINECONE_API_KEY=$PINECONE_API_KEY,PINECONE_ENVIRONMENT=$PINECONE_ENVIRONMENT,PINECONE_INDEX=$PINECONE_INDEX
+
+availableSecrets:
+  secretManager:
+    env:
+      - versionName: projects/$PROJECT_ID/secrets/openai-api-key/versions/latest
+        env: OPENAI_API_KEY
+      - versionName: projects/$PROJECT_ID/secrets/pinecone-api-key/versions/latest
+        env: PINECONE_API_KEY
+      - versionName: projects/$PROJECT_ID/secrets/pinecone-environment/versions/latest
+        env: PINECONE_ENVIRONMENT
+      - versionName: projects/$PROJECT_ID/secrets/pinecone-index/versions/latest
+        env: PINECONE_INDEX
 
 images:
   - 'gcr.io/$PROJECT_ID/chatgpt-rag'
