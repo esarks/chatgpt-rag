@@ -1,17 +1,16 @@
-# Use a lightweight Python base image
+# Use slim Python base image
 FROM python:3.10-slim
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Copy all files from the build context (which is /backend) into /app
+# Copy source code and install dependencies
 COPY . .
 
-# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port your Flask app will run on
+# Set the port for Cloud Run
 EXPOSE 8080
 
-# Run the Flask app
+# Start the app
 CMD ["python", "app.py"]
