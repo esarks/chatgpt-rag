@@ -1,7 +1,7 @@
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   entrypoint: bash
-  args: ["-c", "ls -la /workspace/backend && cat /workspace/backend/app.py | head -n 10"]
+  args: ["-c", "echo '🔍 BEGIN app.py content:' && cat /workspace/backend/app.py && echo '🔍 END app.py content'"]
 
 - name: 'gcr.io/cloud-builders/docker'
   args: [
