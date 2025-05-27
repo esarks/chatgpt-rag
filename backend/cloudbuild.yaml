@@ -1,18 +1,25 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: [ 'build', '-t', 'gcr.io/pinecone-rag-chatbot/pinecone-rag-backend', '.' ]
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/chatgpt-rag', '.']
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: [ 'push', 'gcr.io/pinecone-rag-chatbot/pinecone-rag-backend' ]
+    args: ['push', 'gcr.io/$PROJECT_ID/chatgpt-rag']
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'gcloud'
     args:
-      - 'run'
-      - 'deploy'
-      - 'pinecone-rag-backend'
-      - '--image=gcr.io/pinecone-rag-chatbot/pinecone-rag-backend'
-      - '--region=us-central1'
-      - '--platform=managed'
-      - '--allow-unauthenticated'
-      - '--set-env-vars=OPENAI_API_KEY=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,PINECONE_API_KEY=pcsk_4n3j9n_DrU9bZFidVvc2GDdzVxBdUJ1ugnZfycqqQAHeafWxKE1ZMcYaZ2Kz31ZKhqZGPo,PINECONE_INDEX=rag-index'
+      [
+        'run', 'deploy', 'chatgpt-rag-api',
+        '--image', 'gcr.io/$PROJECT_ID/chatgpt-rag',
+        '--region', 'us-central1',
+        '--platform', 'managed',
+        '--allow-unauthenticated',
+        '--set-secrets',
+        'OPENAI_API_KEY=openai-api-key:latest',
+        'PINECONE_API_KEY=pinecone-api-key:latest',
+        'PINECONE_ENVIRONMENT=pinecone-environment:latest',
+        'PINECONE_INDEX=pinecone-index:latest'
+      ]
+
+images:
+  - 'gcr.io/$PROJECT_ID/chatgpt-rag'
