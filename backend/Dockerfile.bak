@@ -1,11 +1,11 @@
-# Dockerfile for deploying your Flask + Pinecone RAG backend on Cloud Run
+# Dockerfile for deploying Flask + Pinecone RAG backend on Cloud Run
 FROM python:3.10-slim
 
 # Create app directory
 WORKDIR /app
 
-# Copy project files
-COPY . .
+# Copy project files from /workspace into the container
+COPY /workspace /app
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
