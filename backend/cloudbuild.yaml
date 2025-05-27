@@ -1,6 +1,6 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
-  args: [ 'build', '--no-cache', '-t', 'gcr.io/$PROJECT_ID/pinecone-rag-backend', '.' ]
+  args: [ 'build', '--no-cache', '-f', '../Dockerfile', '-t', 'gcr.io/$PROJECT_ID/pinecone-rag-backend', '../' ]
 
 - name: 'gcr.io/cloud-builders/gcloud'
   entrypoint: bash

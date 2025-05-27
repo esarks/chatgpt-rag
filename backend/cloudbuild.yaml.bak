@@ -2,6 +2,10 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: [ 'build', '--no-cache', '-t', 'gcr.io/$PROJECT_ID/pinecone-rag-backend', '.' ]
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: bash
+  args: ["-c", "find . -name app.py"]
+
 - name: 'gcr.io/cloud-builders/docker'
   args: [ 'push', 'gcr.io/$PROJECT_ID/pinecone-rag-backend' ]
 
