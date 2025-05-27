@@ -1,10 +1,10 @@
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   entrypoint: bash
-  args: ["-c", "ls -la ../ && cat ../app.py | head -n 10"]
+  args: ["-c", "ls -la workspace && cat workspace/app.py | head -n 10"]
 
 - name: 'gcr.io/cloud-builders/docker'
-  args: [ 'build', '--no-cache', '-f', '../Dockerfile', '-t', 'gcr.io/$PROJECT_ID/pinecone-rag-backend', '../' ]
+  args: [ 'build', '--no-cache', '-f', 'workspace/Dockerfile', '-t', 'gcr.io/$PROJECT_ID/pinecone-rag-backend', 'workspace/' ]
 
 - name: 'gcr.io/cloud-builders/gcloud'
   entrypoint: bash
