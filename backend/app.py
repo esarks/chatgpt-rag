@@ -17,9 +17,16 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index(os.getenv("PINECONE_INDEX"))
+try:
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    index = pc.Index(os.getenv("PINECONE_INDEX"))
+    print("✅ Successfully initialized OpenAI and Pinecone")
+except Exception as e:
+    print("❌ Failed to initialize OpenAI or Pinecone:", e)
+    client = None
+    pc = None
+    index = None
 
 FILE_LOG = "uploaded_files.json"
 CHUNK_LOG = "chunk_log.json"

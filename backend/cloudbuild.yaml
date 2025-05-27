@@ -1,4 +1,5 @@
 steps:
+  # Optional: Print app.py for debug visibility
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: bash
     args:
@@ -8,6 +9,7 @@ steps:
         cat backend/app.py
         echo '🔍 END app.py content'
 
+  # Step 1: Build Docker image from backend folder
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - build
@@ -18,11 +20,13 @@ steps:
       - gcr.io/$PROJECT_ID/pinecone-rag-backend
       - backend
 
+  # Step 2: Push image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - push
       - gcr.io/$PROJECT_ID/pinecone-rag-backend
 
+  # Step 3: Deploy to Cloud Run with correct environment variables
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -37,8 +41,7 @@ steps:
       - us-central1
       - --allow-unauthenticated
       - --set-env-vars
-      - |
-        OPENAI_API_KEY=your-openai-key,PINECONE_API_KEY=your-pinecone-key,PINECONE_INDEX=rag-index,PINECONE_ENVIRONMENT=us-east-1
+      - "OPENAI_API_KEY=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,PINECONE_API_KEY=pcsk_4n3j9n_DrU9bZFidVvc2GDdzVxBdUJ1ugnZfycqqQAHeafWxKE1ZMcYaZ2Kz31ZKhqZGPo,PINECONE_ENVIRONMENT=us-east-1,PINECONE_INDEX=rag-index"
 
 images:
   - gcr.io/$PROJECT_ID/pinecone-rag-backend
