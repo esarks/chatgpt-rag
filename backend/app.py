@@ -1,4 +1,4 @@
-#20250526b
+# 20250527a
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import os
@@ -37,23 +37,19 @@ def sanitize_id(text):
 def extract_text(file_path, file_type):
     text = ""
     print(f"🔍 Extracting: {file_path} ({file_type})")
-
     if file_type.endswith(".pdf"):
         import pdfplumber
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 text += page.extract_text() or ""
-
     elif file_type.endswith(".docx"):
         import docx
         doc = docx.Document(file_path)
         for para in doc.paragraphs:
             text += para.text + "\n"
-
     elif file_type.endswith(".txt"):
         with open(file_path, "r", encoding="utf-8") as f:
             text = f.read()
-
     elif file_type.endswith(".xlsx"):
         try:
             wb = openpyxl.load_workbook(file_path, data_only=True)
@@ -68,44 +64,37 @@ def extract_text(file_path, file_type):
                 text = df.astype(str).apply(" ".join, axis=1).str.cat(sep="\n")
             except Exception as e2:
                 raise ValueError(f"Unable to read Excel file using openpyxl or pandas: {e2}")
-
     else:
         raise ValueError("Unsupported file type")
     return text
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
+    if index is None or client is None:
+        return jsonify({"error": "Backend not initialized"}), 500
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
-
     try:
         print(f"🔁 Starting upload for {file.filename}")
         start_time = time.time()
-
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             file.save(temp_file.name)
             print(f"✅ File saved at {temp_file.name}")
             text = extract_text(temp_file.name, file.filename.lower())
-
         if not text.strip():
             raise ValueError("File is empty or failed to extract any text.")
-
         chunks = [text[i:i+500] for i in range(0, len(text), 500)]
         print(f"🧩 Created {len(chunks)} chunks")
-
         for i, chunk in enumerate(chunks):
             embedding = client.embeddings.create(
                 model="text-embedding-ada-002",
                 input=chunk
             ).data[0].embedding
-
             vector_id = f"{sanitize_id(file.filename)}-{i}"
             index.upsert([(vector_id, embedding, {"text": chunk, "source": file.filename})])
-
         uploaded = set()
         if os.path.exists(FILE_LOG):
             with open(FILE_LOG, "r") as f:
@@ -113,7 +102,6 @@ def upload_file():
         uploaded.add(file.filename)
         with open(FILE_LOG, "w") as f:
             json.dump(sorted(uploaded), f)
-
         chunk_map = {}
         if os.path.exists(CHUNK_LOG):
             with open(CHUNK_LOG, "r") as f:
@@ -121,14 +109,12 @@ def upload_file():
         chunk_map[file.filename] = len(chunks)
         with open(CHUNK_LOG, "w") as f:
             json.dump(chunk_map, f)
-
         print(f"✅ Finished processing {file.filename} in {round(time.time() - start_time, 2)}s")
         return jsonify({
             "message": f"Uploaded and indexed {len(chunks)} chunks from {file.filename}.",
             "filename": file.filename,
             "chunks": len(chunks)
         })
-
     except Exception as e:
         print(f"❌ Error during upload of {file.filename}: {e}")
         return jsonify({"error": str(e)}), 500
@@ -157,25 +143,23 @@ def file_chunk_details():
 
 @app.route("/ask", methods=["POST"])
 def ask_question():
+    if index is None or client is None:
+        return jsonify({"error": "Backend not initialized"}), 500
     data = request.get_json()
     question = data.get("question", "")
     if not question:
         return jsonify({"error": "No question provided"}), 400
-
     embedding = client.embeddings.create(
         model="text-embedding-ada-002",
         input=question
     ).data[0].embedding
-
     pinecone_response = index.query(vector=embedding, top_k=5, include_metadata=True)
-
     context = ""
     sources = []
     for match in pinecone_response["matches"]:
         metadata = match.get("metadata", {})
         context += metadata.get("text", "") + "\n"
         sources.append(metadata.get("source", "unknown"))
-
     chat_response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
@@ -183,7 +167,6 @@ def ask_question():
             {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
         ]
     )
-
     return jsonify({
         "question": question,
         "answer": chat_response.choices[0].message.content,
@@ -192,18 +175,17 @@ def ask_question():
 
 @app.route("/stream", methods=["POST"])
 def stream_answer():
+    if index is None or client is None:
+        return jsonify({"error": "Backend not initialized"}), 500
     data = request.get_json()
     question = data.get("question", "")
     if not question:
         return jsonify({"error": "No question provided"}), 400
-
     embedding = client.embeddings.create(
         model="text-embedding-ada-002",
         input=question
     ).data[0].embedding
-
     pinecone_response = index.query(vector=embedding, top_k=5, include_metadata=True)
-
     context = ""
     for match in pinecone_response["matches"]:
         metadata = match.get("metadata", {})
@@ -221,11 +203,9 @@ def stream_answer():
         for chunk in chat_stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-
     return Response(generate(), mimetype="text/plain")
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 8080))
     print("✅ Flask app starting on port", port)
     print("🔐 OPENAI key present:", bool(os.getenv("OPENAI_API_KEY")))
