@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 print("💡 Starting app.py...")
 
-# Load .env for local dev
+# Load .env if available
 load_dotenv()
 print("✅ dotenv loaded")
 
@@ -30,6 +30,7 @@ import pinecone
 
 openai.api_key = OPENAI_API_KEY
 
+# Initialize Pinecone
 try:
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     index = pinecone.Index(PINECONE_INDEX)
@@ -118,6 +119,39 @@ Answer:"""
         return Response(stream_with_context(generate()), content_type="text/plain")
     except Exception as e:
         print(f"❌ /ask handler failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/ask-json", methods=["POST"])
+def ask_json():
+    try:
+        print("📥 /ask-json request received")
+        data = request.get_json()
+        question = data.get("question", "")
+        print(f"🧠 Question: {question}")
+
+        if not question:
+            return jsonify({"error": "Missing 'question'"}), 400
+
+        context, sources = get_context_from_pinecone(question)
+
+        prompt = f"""Answer the question using the context below.
+
+Context:
+{context}
+
+Question: {question}
+Answer:"""
+
+        result = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        answer = result["choices"][0]["message"]["content"]
+        print("✅ Non-streamed response ready")
+        return jsonify({"answer": answer, "sources": sources})
+    except Exception as e:
+        print(f"❌ /ask-json failed: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/sources", methods=["POST"])
