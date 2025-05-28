@@ -5,27 +5,31 @@ from dotenv import load_dotenv
 
 print("💡 Starting app.py...")
 
-# Load local .env file if available
+# Load .env for local dev
 load_dotenv()
 print("✅ dotenv loaded")
 
-# Try to load env variables
-try:
-    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-    PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
-    PINECONE_ENVIRONMENT = os.environ["PINECONE_ENVIRONMENT"]
-    PINECONE_INDEX = os.environ["PINECONE_INDEX"]
-    print("✅ Environment variables loaded")
-except KeyError as e:
-    print(f"❌ Missing environment variable: {e}")
-    raise
+# Safely load env vars
+def get_env(key):
+    value = os.environ.get(key)
+    if not value:
+        print(f"⚠️ ENV missing: {key}")
+        return None
+    return value
+
+OPENAI_API_KEY = get_env("OPENAI_API_KEY")
+PINECONE_API_KEY = get_env("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = get_env("PINECONE_ENVIRONMENT")
+PINECONE_INDEX = get_env("PINECONE_INDEX")
+
+if not all([OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT, PINECONE_INDEX]):
+    raise RuntimeError("❌ Missing one or more required environment variables")
 
 import openai
 import pinecone
 
 openai.api_key = OPENAI_API_KEY
 
-# Initialize Pinecone
 try:
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     index = pinecone.Index(PINECONE_INDEX)
@@ -40,7 +44,15 @@ CORS(app)
 @app.route("/")
 def home():
     print("👋 / endpoint hit")
-    return jsonify({"status": "running"})
+    return jsonify({
+        "status": "running",
+        "env_check": {
+            "OPENAI_API_KEY": f"{OPENAI_API_KEY[:8]}..." if OPENAI_API_KEY else "missing",
+            "PINECONE_API_KEY": f"{PINECONE_API_KEY[:8]}..." if PINECONE_API_KEY else "missing",
+            "PINECONE_ENVIRONMENT": PINECONE_ENVIRONMENT,
+            "PINECONE_INDEX": PINECONE_INDEX
+        }
+    })
 
 def get_context_from_pinecone(query, top_k=5):
     try:
