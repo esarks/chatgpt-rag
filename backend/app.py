@@ -9,7 +9,6 @@ print("💡 Starting app.py...")
 load_dotenv()
 print("✅ dotenv loaded")
 
-# Safely load env vars
 def get_env(key):
     value = os.environ.get(key)
     if not value:
@@ -17,6 +16,7 @@ def get_env(key):
         return None
     return value
 
+# Load required env vars
 OPENAI_API_KEY = get_env("OPENAI_API_KEY")
 PINECONE_API_KEY = get_env("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = get_env("PINECONE_ENVIRONMENT")
@@ -30,7 +30,6 @@ import pinecone
 
 openai.api_key = OPENAI_API_KEY
 
-# Initialize Pinecone
 try:
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     index = pinecone.Index(PINECONE_INDEX)
@@ -55,17 +54,48 @@ def home():
         }
     })
 
+@app.route("/healthcheck")
+def healthcheck():
+    print("🩺 /healthcheck endpoint hit")
+    health = {"status": "ok", "openai": None, "pinecone": None, "env": {}}
+    try:
+        health["env"]["OPENAI_API_KEY"] = "✔️" if OPENAI_API_KEY else "❌ missing"
+        health["env"]["PINECONE_API_KEY"] = "✔️" if PINECONE_API_KEY else "❌ missing"
+        health["env"]["PINECONE_ENVIRONMENT"] = PINECONE_ENVIRONMENT or "❌ missing"
+        health["env"]["PINECONE_INDEX"] = PINECONE_INDEX or "❌ missing"
+
+        # OpenAI test
+        try:
+            response = openai.Embedding.create(
+                input="healthcheck",
+                model="text-embedding-ada-002"
+            )
+            health["openai"] = "✔️ connected"
+        except Exception as e:
+            health["openai"] = f"❌ {str(e)}"
+
+        # Pinecone test
+        try:
+            test_vector = [0.0] * 1536
+            result = index.query(vector=test_vector, top_k=1)
+            health["pinecone"] = "✔️ connected"
+        except Exception as e:
+            health["pinecone"] = f"❌ {str(e)}"
+
+        return jsonify(health)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 def get_context_from_pinecone(query, top_k=5):
     try:
-        print(f"🔍 Getting embedding for: {query}")
+        print(f"🔍 Embedding: {query}")
         embedding = openai.Embedding.create(
             input=query,
             model="text-embedding-ada-002"
         )["data"][0]["embedding"]
-        print("✅ OpenAI embedding received")
 
         results = index.query(vector=embedding, top_k=top_k, include_metadata=True)
-        print(f"✅ Pinecone results: {len(results['matches'])} matches")
+        print(f"✅ Pinecone returned {len(results['matches'])} matches")
 
         context = ""
         sources = set()
@@ -78,20 +108,18 @@ def get_context_from_pinecone(query, top_k=5):
 
         return context.strip(), list(sources)
     except Exception as e:
-        print(f"❌ get_context_from_pinecone failed: {e}")
+        print(f"❌ Context error: {e}")
         raise
 
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
-        print("📥 /ask request received")
         data = request.get_json()
         question = data.get("question", "")
-        print(f"🧠 Question: {question}")
+        print(f"📥 /ask: {question}")
 
         if not question:
-            print("❌ No question provided")
-            return jsonify({"error": "Missing 'question' in request"}), 400
+            return jsonify({"error": "Missing 'question'"}), 400
 
         context, sources = get_context_from_pinecone(question)
 
@@ -118,16 +146,15 @@ Answer:"""
 
         return Response(stream_with_context(generate()), content_type="text/plain")
     except Exception as e:
-        print(f"❌ /ask handler failed: {e}")
+        print(f"❌ /ask error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/ask-json", methods=["POST"])
 def ask_json():
     try:
-        print("📥 /ask-json request received")
         data = request.get_json()
         question = data.get("question", "")
-        print(f"🧠 Question: {question}")
+        print(f"📥 /ask-json: {question}")
 
         if not question:
             return jsonify({"error": "Missing 'question'"}), 400
@@ -148,28 +175,25 @@ Answer:"""
         )
 
         answer = result["choices"][0]["message"]["content"]
-        print("✅ Non-streamed response ready")
         return jsonify({"answer": answer, "sources": sources})
     except Exception as e:
-        print(f"❌ /ask-json failed: {e}")
+        print(f"❌ /ask-json error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/sources", methods=["POST"])
 def get_sources():
     try:
-        print("📥 /sources request received")
         data = request.get_json()
         question = data.get("question", "")
-        print(f"🧠 Question: {question}")
+        print(f"📥 /sources: {question}")
 
         if not question:
-            print("❌ No question provided")
-            return jsonify({"error": "Missing 'question' in request"}), 400
+            return jsonify({"error": "Missing 'question'"}), 400
 
         _, sources = get_context_from_pinecone(question)
         return jsonify({"sources": sources})
     except Exception as e:
-        print(f"❌ /sources handler failed: {e}")
+        print(f"❌ /sources error: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
