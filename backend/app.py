@@ -1,202 +1,85 @@
 import os
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
+from pinecone import Pinecone, ServerlessSpec
+import openai
 
-print("💡 Starting app.py...")
-
-# Load .env if available
+# Load environment variables
 load_dotenv()
 print("✅ dotenv loaded")
 
-def get_env(key):
-    value = os.environ.get(key)
-    if not value:
-        print(f"⚠️ ENV missing: {key}")
-        return None
-    return value
-
-# Load required env vars
-OPENAI_API_KEY = get_env("OPENAI_API_KEY")
-PINECONE_API_KEY = get_env("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = get_env("PINECONE_ENVIRONMENT")
-PINECONE_INDEX = get_env("PINECONE_INDEX")
-
-if not all([OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT, PINECONE_INDEX]):
-    raise RuntimeError("❌ Missing one or more required environment variables")
-
-import openai
-import pinecone
-
-openai.api_key = OPENAI_API_KEY
-
-try:
-    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-    index = pinecone.Index(PINECONE_INDEX)
-    print(f"✅ Pinecone initialized with index: {PINECONE_INDEX}")
-except Exception as e:
-    print(f"❌ Pinecone init failed: {e}")
-    raise
-
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+print("💡 Starting app.py...")
 
-@app.route("/")
-def home():
-    print("👋 / endpoint hit")
-    return jsonify({
-        "status": "running",
-        "env_check": {
-            "OPENAI_API_KEY": f"{OPENAI_API_KEY[:8]}..." if OPENAI_API_KEY else "missing",
-            "PINECONE_API_KEY": f"{PINECONE_API_KEY[:8]}..." if PINECONE_API_KEY else "missing",
-            "PINECONE_ENVIRONMENT": PINECONE_ENVIRONMENT,
-            "PINECONE_INDEX": PINECONE_INDEX
-        }
-    })
+# Load API keys and config
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
+PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 
-@app.route("/healthcheck")
+# Debug environment variable loading
+print(f"🔑 OPENAI_API_KEY set: {'Yes' if OPENAI_API_KEY else 'No'}")
+print(f"🔑 PINECONE_API_KEY set: {'Yes' if PINECONE_API_KEY else 'No'}")
+print(f"🌍 PINECONE_ENVIRONMENT: {PINECONE_ENVIRONMENT}")
+print(f"📚 PINECONE_INDEX: {PINECONE_INDEX}")
+
+# Set up OpenAI
+openai.api_key = OPENAI_API_KEY
+
+# Set up Pinecone client
+pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+index = pc.Index(PINECONE_INDEX)
+print(f"📦 Pinecone index '{PINECONE_INDEX}' ready.")
+
+# Healthcheck endpoint
+@app.route("/healthcheck", methods=["GET"])
 def healthcheck():
-    print("🩺 /healthcheck endpoint hit")
-    health = {"status": "ok", "openai": None, "pinecone": None, "env": {}}
     try:
-        health["env"]["OPENAI_API_KEY"] = "✔️" if OPENAI_API_KEY else "❌ missing"
-        health["env"]["PINECONE_API_KEY"] = "✔️" if PINECONE_API_KEY else "❌ missing"
-        health["env"]["PINECONE_ENVIRONMENT"] = PINECONE_ENVIRONMENT or "❌ missing"
-        health["env"]["PINECONE_INDEX"] = PINECONE_INDEX or "❌ missing"
-
-        # OpenAI test
-        try:
-            response = openai.Embedding.create(
-                input="healthcheck",
-                model="text-embedding-ada-002"
-            )
-            health["openai"] = "✔️ connected"
-        except Exception as e:
-            health["openai"] = f"❌ {str(e)}"
-
-        # Pinecone test
-        try:
-            test_vector = [0.0] * 1536
-            result = index.query(vector=test_vector, top_k=1)
-            health["pinecone"] = "✔️ connected"
-        except Exception as e:
-            health["pinecone"] = f"❌ {str(e)}"
-
-        return jsonify(health)
+        openai.Model.list()
+        pc.list_indexes()
+        return jsonify({"status": "ok"}), 200
     except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify({"status": "error", "details": str(e)}), 500
 
-def get_context_from_pinecone(query, top_k=5):
-    try:
-        print(f"🔍 Embedding: {query}")
-        embedding = openai.Embedding.create(
-            input=query,
-            model="text-embedding-ada-002"
-        )["data"][0]["embedding"]
-
-        results = index.query(vector=embedding, top_k=top_k, include_metadata=True)
-        print(f"✅ Pinecone returned {len(results['matches'])} matches")
-
-        context = ""
-        sources = set()
-        for match in results.get("matches", []):
-            metadata = match.get("metadata", {})
-            text = metadata.get("text", "")
-            source = metadata.get("source", "unknown")
-            context += f"\nSource: {source}\n{text}\n"
-            sources.add(source)
-
-        return context.strip(), list(sources)
-    except Exception as e:
-        print(f"❌ Context error: {e}")
-        raise
-
+# Main chat endpoint
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
         data = request.get_json()
         question = data.get("question", "")
-        print(f"📥 /ask: {question}")
-
         if not question:
-            return jsonify({"error": "Missing 'question'"}), 400
+            return jsonify({"error": "No question provided."}), 400
 
-        context, sources = get_context_from_pinecone(question)
-
-        prompt = f"""Answer the question using the context below.
-If the context is not helpful, say so.
-
-Context:
-{context}
-
-Question: {question}
-Answer:"""
-
-        def generate():
-            print("⚙️ Streaming OpenAI response...")
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                stream=True
-            )
-            for chunk in response:
-                content = chunk["choices"][0].get("delta", {}).get("content", "")
-                if content:
-                    yield content
-
-        return Response(stream_with_context(generate()), content_type="text/plain")
-    except Exception as e:
-        print(f"❌ /ask error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/ask-json", methods=["POST"])
-def ask_json():
-    try:
-        data = request.get_json()
-        question = data.get("question", "")
-        print(f"📥 /ask-json: {question}")
-
-        if not question:
-            return jsonify({"error": "Missing 'question'"}), 400
-
-        context, sources = get_context_from_pinecone(question)
-
-        prompt = f"""Answer the question using the context below.
-
-Context:
-{context}
-
-Question: {question}
-Answer:"""
-
-        result = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
+        # Embed question using OpenAI
+        embedding_response = openai.Embedding.create(
+            input=[question],
+            model="text-embedding-ada-002"
         )
+        embedding = embedding_response["data"][0]["embedding"]
 
-        answer = result["choices"][0]["message"]["content"]
-        return jsonify({"answer": answer, "sources": sources})
+        # Query Pinecone index
+        results = index.query(vector=embedding, top_k=5, include_metadata=True)
+
+        # Build context
+        context = "\n".join([match["metadata"].get("text", "") for match in results["matches"]])
+
+        # Use GPT to answer
+        completion = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Answer the question based on the context below."},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion:\n{question}"}
+            ]
+        )
+        answer = completion["choices"][0]["message"]["content"]
+        return jsonify({"answer": answer})
+
     except Exception as e:
-        print(f"❌ /ask-json error: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/sources", methods=["POST"])
-def get_sources():
-    try:
-        data = request.get_json()
-        question = data.get("question", "")
-        print(f"📥 /sources: {question}")
-
-        if not question:
-            return jsonify({"error": "Missing 'question'"}), 400
-
-        _, sources = get_context_from_pinecone(question)
-        return jsonify({"sources": sources})
-    except Exception as e:
-        print(f"❌ /sources error: {e}")
-        return jsonify({"error": str(e)}), 500
-
+# Needed for gunicorn
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    print(f"🚀 Running app on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
