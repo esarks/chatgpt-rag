@@ -1,8 +1,9 @@
 flask
 flask-cors
 openai
-python-dotenv
+pinecone-client
+pandas
 pdfplumber
 python-docx
-pinecone
 openpyxl
+python-dotenv
