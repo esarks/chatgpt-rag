@@ -2,84 +2,78 @@ import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from pinecone import Pinecone, ServerlessSpec
 import openai
+import pinecone
 
 # Load environment variables
 load_dotenv()
-print("✅ dotenv loaded")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
+PINECONE_INDEX = os.environ.get("PINECONE_INDEX")
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
-print("💡 Starting app.py...")
 
-# Load API keys and config
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
-PINECONE_INDEX = os.getenv("PINECONE_INDEX")
-
-# Debug environment variable loading
-print(f"🔑 OPENAI_API_KEY set: {'Yes' if OPENAI_API_KEY else 'No'}")
-print(f"🔑 PINECONE_API_KEY set: {'Yes' if PINECONE_API_KEY else 'No'}")
-print(f"🌍 PINECONE_ENVIRONMENT: {PINECONE_ENVIRONMENT}")
-print(f"📚 PINECONE_INDEX: {PINECONE_INDEX}")
-
-# Set up OpenAI
+# Initialize OpenAI
 openai.api_key = OPENAI_API_KEY
 
-# Set up Pinecone client
-pc = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-index = pc.Index(PINECONE_INDEX)
-print(f"📦 Pinecone index '{PINECONE_INDEX}' ready.")
+# Initialize Pinecone
+pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+index = pinecone.Index(PINECONE_INDEX)
 
 # Healthcheck endpoint
 @app.route("/healthcheck", methods=["GET"])
 def healthcheck():
     try:
+        # Check OpenAI key
         openai.Model.list()
-        pc.list_indexes()
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "details": str(e)}), 500
 
-# Main chat endpoint
+        # Check Pinecone index
+        stats = index.describe_index_stats()
+        if not stats:
+            raise Exception("No index stats returned.")
+
+        return jsonify({"status": "ok", "message": "All systems operational"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Main ask endpoint
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
         data = request.get_json()
         question = data.get("question", "")
         if not question:
-            return jsonify({"error": "No question provided."}), 400
+            return jsonify({"error": "Missing question"}), 400
 
-        # Embed question using OpenAI
-        embedding_response = openai.Embedding.create(
+        # Get embedding
+        embedding = openai.Embedding.create(
             input=[question],
             model="text-embedding-ada-002"
-        )
-        embedding = embedding_response["data"][0]["embedding"]
+        )["data"][0]["embedding"]
 
-        # Query Pinecone index
-        results = index.query(vector=embedding, top_k=5, include_metadata=True)
+        # Query Pinecone
+        search_result = index.query(vector=embedding, top_k=5, include_metadata=True)
+        contexts = [match["metadata"].get("text", "") for match in search_result.get("matches", [])]
+        context_block = "\n---\n".join(contexts)
 
-        # Build context
-        context = "\n".join([match["metadata"].get("text", "") for match in results["matches"]])
+        prompt = f"Answer the question based on the context below:\n\nContext:\n{context_block}\n\nQuestion:\n{question}\nAnswer:"
 
-        # Use GPT to answer
+        # Get response
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Answer the question based on the context below."},
-                {"role": "user", "content": f"Context:\n{context}\n\nQuestion:\n{question}"}
-            ]
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500
         )
         answer = completion["choices"][0]["message"]["content"]
-        return jsonify({"answer": answer})
 
+        return jsonify({"answer": answer})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Needed for gunicorn
+# Entry point for Cloud Run
 if __name__ == "__main__":
+    print("✅ Environment loaded")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
