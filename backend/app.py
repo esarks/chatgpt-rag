@@ -1,75 +1,102 @@
 import os
-from flask import Flask, request, jsonify, stream_with_context, Response
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
+from dotenv import load_dotenv
 import openai
 import pinecone
-from dotenv import load_dotenv
 
+# Load .env if available (local dev)
 load_dotenv()
 
-# Load environment variables
-openai.api_key = os.getenv("OPENAI_API_KEY")
-pinecone_api_key = os.getenv("PINECONE_API_KEY")
-pinecone_env = os.getenv("PINECONE_ENVIRONMENT")
-pinecone_index_name = os.getenv("PINECONE_INDEX")
+# Initialize environment variables
+try:
+    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+    PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
+    PINECONE_ENVIRONMENT = os.environ["PINECONE_ENVIRONMENT"]
+    PINECONE_INDEX = os.environ["PINECONE_INDEX"]
+except KeyError as e:
+    raise RuntimeError(f"Missing required environment variable: {e}")
+
+openai.api_key = OPENAI_API_KEY
 
 # Initialize Pinecone
-pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
-index = pinecone.Index(pinecone_index_name)
+pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+index = pinecone.Index(PINECONE_INDEX)
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
+@app.route("/")
+def home():
+    return jsonify({"status": "running", "source": "Pinecone RAG backend"})
+
 def get_context_from_pinecone(query, top_k=5):
-    embed_response = openai.Embedding.create(input=query, model="text-embedding-ada-002")
-    query_embedding = embed_response["data"][0]["embedding"]
-    search_result = index.query(vector=query_embedding, top_k=top_k, include_metadata=True)
+    embedding = openai.Embedding.create(
+        input=query,
+        model="text-embedding-ada-002"
+    )["data"][0]["embedding"]
+
+    results = index.query(vector=embedding, top_k=top_k, include_metadata=True)
     
-    sources = []
-    context_text = ""
-    for match in search_result["matches"]:
-        text = match["metadata"].get("text", "")
-        source = match["metadata"].get("source", "unknown")
-        context_text += f"\nSource: {source}\n{text}\n"
-        sources.append(source)
+    context = ""
+    sources = set()
+    for match in results.get("matches", []):
+        metadata = match.get("metadata", {})
+        text = metadata.get("text", "")
+        source = metadata.get("source", "unknown")
+        context += f"\nSource: {source}\n{text}\n"
+        sources.add(source)
     
-    return context_text, sources
+    return context.strip(), list(sources)
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.get_json()
-    question = data.get("question", "")
-    if not question:
-        return jsonify({"error": "No question provided"}), 400
+    try:
+        data = request.get_json()
+        question = data.get("question", "")
+        if not question:
+            return jsonify({"error": "Missing 'question' in request"}), 400
 
-    context, sources = get_context_from_pinecone(question)
-    prompt = f"Use the following context to answer the question.\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+        context, sources = get_context_from_pinecone(question)
 
-    def generate():
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            stream=True
-        )
-        for chunk in response:
-            content = chunk["choices"][0].get("delta", {}).get("content", "")
-            yield content
+        prompt = f"""Answer the question using the context below.
+If the context is not helpful, say so.
 
-    return Response(stream_with_context(generate()), content_type='text/plain')
+Context:
+{context}
+
+Question: {question}
+Answer:"""
+
+        def generate():
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                stream=True
+            )
+            for chunk in response:
+                content = chunk["choices"][0].get("delta", {}).get("content", "")
+                if content:
+                    yield content
+
+        return Response(stream_with_context(generate()), content_type="text/plain")
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/sources", methods=["POST"])
 def get_sources():
-    data = request.get_json()
-    question = data.get("question", "")
-    if not question:
-        return jsonify({"error": "No question provided"}), 400
+    try:
+        data = request.get_json()
+        question = data.get("question", "")
+        if not question:
+            return jsonify({"error": "Missing 'question' in request"}), 400
 
-    _, sources = get_context_from_pinecone(question)
-    return jsonify({"sources": list(set(sources))})
-
-@app.route("/")
-def home():
-    return "Pinecone RAG Chatbot Backend is Running."
+        _, sources = get_context_from_pinecone(question)
+        return jsonify({"sources": sources})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
